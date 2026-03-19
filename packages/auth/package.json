@@ -1,0 +1,24 @@
+{
+  "name": "@tk2-pkpl/auth",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@tk2-pkpl/db": "workspace:*",
+    "@tk2-pkpl/env": "workspace:*",
+    "better-auth": "catalog:",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@tk2-pkpl/config": "workspace:*",
+    "typescript": "^5"
+  }
+}

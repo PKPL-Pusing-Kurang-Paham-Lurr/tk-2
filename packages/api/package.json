@@ -1,0 +1,29 @@
+{
+  "name": "@tk2-pkpl/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@tk2-pkpl/auth": "workspace:*",
+    "@tk2-pkpl/db": "workspace:*",
+    "@tk2-pkpl/env": "workspace:*",
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "@types/pg": "^8.16.0",
+    "dotenv": "catalog:",
+    "drizzle-orm": "catalog:",
+    "next": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@tk2-pkpl/config": "workspace:*",
+    "typescript": "^5"
+  }
+}

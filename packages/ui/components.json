@@ -1,0 +1,24 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "base-lyra",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@tk2-pkpl/ui/components",
+    "utils": "@tk2-pkpl/ui/lib/utils",
+    "hooks": "@tk2-pkpl/ui/hooks",
+    "lib": "@tk2-pkpl/ui/lib",
+    "ui": "@tk2-pkpl/ui/components"
+  },
+  "menuColor": "default",
+  "menuAccent": "subtle",
+  "registries": {}
+}

@@ -1,0 +1,3 @@
+{
+  "extends": "@tk2-pkpl/config/tsconfig.base.json"
+}
