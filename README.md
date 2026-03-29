@@ -37,7 +37,7 @@ tk2-pkpl/
 │   └── db/          # Database schema & queries
 ```
 
-## Arsitektur Better-Auth (Behind The Hood)
+## Arsitektur Autentikasi (dengan Better-Auth)
 
 Better-Auth adalah library autentikasi yang menggunakan pendekatan **cookie-based session management**. Berikut cara kerja internal Better-Auth:
 
