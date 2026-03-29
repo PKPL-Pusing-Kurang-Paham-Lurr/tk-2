@@ -63,20 +63,20 @@ Proyek ini menggunakan **Better-Auth** - library autentikasi modern yang mengimp
 ```mermaid
 flowchart TB
     subgraph External
-        Google[(Google OAuth<br/>Provider)]
+        Google[(Google OAuth Provider)]
     end
     
     subgraph Application
         subgraph Frontend
-            Browser[Browser<br/>User]
-            LoginPage[Login Page<br/>/login]
-            DashboardPage[Dashboard Page<br/>/dashboard]
+            Browser[Browser User]
+            LoginPage[Login Page /login]
+            DashboardPage[Dashboard Page /dashboard]
         end
         
         subgraph Backend
-            AuthHandler[Auth Handler<br/>/api/auth/*]
-            SessionCookie[Session Cookie<br/>httpOnly, secure, signed]
-            ContextAPI[Context API<br/>createContext]
+            AuthHandler[Auth Handler /api/auth/*]
+            SessionCookie[Session Cookie httpOnly, secure, signed]
+            ContextAPI[Context API createContext]
         end
         
         subgraph API
@@ -86,7 +86,7 @@ flowchart TB
         end
         
         subgraph Data
-            PostgreSQL[(PostgreSQL<br/>Database)]
+            PostgreSQL[(PostgreSQL Database)]
             UserTable[user]
             SessionTable[session]
             AccountTable[account]
@@ -95,7 +95,7 @@ flowchart TB
     
     Browser -->|1. signIn.social| LoginPage
     LoginPage -->|2. Redirect| Google
-    Google -->|3. Callback<br/>/api/auth/callback/google| AuthHandler
+    Google -->|3. Callback /api/auth/callback/google| AuthHandler
     AuthHandler -->|4. Create Session| PostgreSQL
     AuthHandler -->|5. Set Cookie| SessionCookie
     SessionCookie -->|6. Request with Cookie| ContextAPI
@@ -128,14 +128,14 @@ sequenceDiagram
 
     rect rgb(240, 248, 255)
         Note over U,B: Phase 1: Initiation
-        U->>B: Klik "Login dengan Google"
+        U->>B: Klik Login dengan Google
         B->>N: Akses /login
         N-->>B: Tampilkan login page
     end
 
     rect rgb(255, 250, 240)
         Note over G,N: Phase 2: OAuth Redirect
-        B->>G: Redirect ke Google OAuth<br/>client_id, redirect_uri,<br/>scope, state, code_challenge
+        B->>G: Redirect ke Google OAuth client_id, redirect_uri, scope, state, code_challenge
         Note over G: User login & consent
         G-->>B: Authorization Code + state
     end
@@ -152,8 +152,8 @@ sequenceDiagram
 
     rect rgb(255, 240, 245)
         Note over A,B: Phase 4: Session Established
-        A-->>B: Set-Cookie: session_token<br/>(httpOnly, Secure, SameSite)
-        B->>N: Request ke /dashboard<br/>Cookie: session_token
+        A-->>B: Set-Cookie: session_token (httpOnly, Secure, SameSite)
+        B->>N: Request ke /dashboard Cookie: session_token
         N->>A: getSession(headers)
         A-->>N: { user, session }
         N-->>B: Render dashboard
@@ -190,32 +190,32 @@ sequenceDiagram
 
     rect rgb(230, 245, 255)
         Note over B,N: Step 1-2: Generate PKCE Code Verifier & Challenge
-        N->>N: Generate random code_verifier<br/>43-128 characters
+        N->>N: Generate random code_verifier 43-128 characters
         N->>N: SHA256 hash of code_verifier
         N->>N: Base64URL encode to get code_challenge
     end
 
     rect rgb(255, 245, 230)
         Note over B,G: Step 3: Authorization Request
-        B->>G: GET /authorize?<br/>client_id<br/>response_type=code<br/>redirect_uri<br/>scope=openid profile email<br/>state={csrf_token}<br/>code_challenge={challenge}<br/>code_challenge_method=S256
+        B->>G: GET /authorize? client_id response_type=code redirect_uri scope=openid profile email state={csrf_token} code_challenge={challenge} code_challenge_method=S256
     end
 
     rect rgb(245, 255, 230)
         Note over G,B: Step 4-5: User Authentication
-        G->>G: Display consent screen<br/>"App wants access to:<br/>- Email<br/>- Profile"
-        U->>G: User clicks "Allow"
+        G->>G: Display consent screen App wants access to: Email Profile
+        U->>G: User clicks Allow
     end
 
     rect rgb(255, 230, 245)
         Note over G,N: Step 6: Authorization Code Issued
-        G-->>B: 302 Redirect to redirect_uri?<br/>code={auth_code}&state={csrf_token}
+        G-->>B: 302 Redirect to redirect_uri? code={auth_code}&state={csrf_token}
     end
 
     rect rgb(245, 230, 255)
         Note over B,N: Step 7-8: Exchange Code for Tokens
-        B->>N: POST /token<br/>grant_type=authorization_code<br/>code={auth_code}<br/>code_verifier={original_verifier}<br/>client_id<br/>redirect_uri
+        B->>N: POST /token grant_type=authorization_code code={auth_code} code_verifier={original_verifier} client_id redirect_uri
         N->>G: Verify code_verifier matches
-        G-->>N: access_token<br/>refresh_token<br/>id_token<br/>expires_in
+        G-->>N: access_token refresh_token id_token expires_in
     end
 
     Note over N: Store tokens securely
@@ -256,9 +256,9 @@ Tanpa PKCE, attacker bisa mencuri authorization code melalui:
 flowchart LR
     A[Attacker] -->|1. Setup malicious site| M[Malicious Site]
     M -->|2. Victim visits| M
-    M -->|3. Redirect to legitimate<br/>OAuth with attacker's callback| G[Google]
-    G -->|4. Victim authenticates<br/>& consents| G
-    G -->|5. Redirect with code<br/>to attacker's server| M
+    M -->|3. Redirect to legitimate OAuth with attacker's callback| G[Google]
+    G -->|4. Victim authenticates & consents| G
+    G -->|5. Redirect with code to attacker's server| M
     M -->|6. Steal authorization code| A
     A -->|7. Exchange code for tokens| G
     G -->|8. Attacker gets tokens| A
@@ -304,12 +304,12 @@ flowchart TB
     A --> F[domain]
     A --> G[expires]
 
-    B --> B1["✅ HTTPS only<br/>Tidak dikirim via HTTP"]
-    C --> C1["✅ No JS Access<br/>Prevent XSS theft"]
-    D --> D2["✅ CSRF Protection<br/>'strict' atau 'lax'"]
-    E --> E1["✅ Path restriction<br/>/api/*"]
-    F --> F1["✅ Origin only<br/>Tidak ada subdomain leak"]
-    G --> G1["✅ Expiration<br/>7 days default"]
+    B --> B1[✅ HTTPS only - Tidak dikirim via HTTP]
+    C --> C1[✅ No JS Access - Prevent XSS theft]
+    D --> D2[✅ CSRF Protection - strict atau lax]
+    E --> E1[✅ Path restriction - /api/*]
+    F --> F1[✅ Origin only - Tidak ada subdomain leak]
+    G --> G1[✅ Expiration - 7 days default]
 ```
 
 **Implementasi di Better-Auth:**
@@ -338,12 +338,12 @@ Set-Cookie: better-auth.session_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...;
 #### 3.3 Session Lifecycle State Machine
 
 ```mermaid
-stateDiagram-v2
+stateDiagram
     [*] --> Created: User signs in
     Created --> Active: Cookie set in browser
-    Active --> Active: Client requests<br/>with valid cookie
+    Active --> Active: Client requests with valid cookie
     Active --> Validating: Server receives request
-    Validating --> Active: Session valid<br/>Token not expired
+    Validating --> Active: Session valid, Token not expired
     Validating --> Expired: Token expired
     Validating --> Invalid: Signature mismatch
     Expired --> [*]: Session deleted
@@ -360,15 +360,15 @@ stateDiagram-v2
 flowchart TD
     A[Incoming Request] --> B{Parse Cookie}
     B -->|Invalid Format| E[Return 401]
-    B -->|Valid Format| C{Cryptographic<br/>Signature Valid?}
+    B -->|Valid Format| C{Cryptographic Signature Valid?}
     C -->|No| E
-    C -->|Yes| D{Session<br/>Expired?}
-    D -->|Yes| F[Return 401<br/>Session Expired]
-    D -->|No| G{User Still<br/>Exists in DB?}
-    G -->|No| H[Return 401<br/>User Deleted]
-    G -->|Yes| I{IP Address<br/>Changed?}
-    I -->|Yes| J[Optional: Log<br/>Suspicious Activity]
-    I -->|No| K[Allow Access<br/>Return Session Data]
+    C -->|Yes| D{Session Expired?}
+    D -->|Yes| F[Return 401 Session Expired]
+    D -->|No| G{User Still Exists in DB?}
+    G -->|No| H[Return 401 User Deleted]
+    G -->|Yes| I{IP Address Changed?}
+    I -->|Yes| J[Optional: Log Suspicious Activity]
+    I -->|No| K[Allow Access Return Session Data]
     
     style E fill:#ff6b6b,color:#fff
     style F fill:#ff6b6b,color:#fff
@@ -404,19 +404,18 @@ interface SessionPayload {
 #### 3.6 Referensi Session Table
 
 ```mermaid
-erTable
-    session as "session"
-    cols:
-        - id: string (PK) - UUID, primary key
-        - token: string (UK) - Unique session token
-        - expiresAt: timestamp - When session expires
-        - createdAt: timestamp - Creation time
-        - updatedAt: timestamp - Last update time
-        - ipAddress: string - Client IP address
-        - userAgent: string - Browser/client info
-        - userId: string (FK) - Reference to user.id
-    indexes:
-        - session_userId_idx on userId
+erDiagram
+    SESSION ||--o{ USER : references
+    SESSION {
+        string id PK
+        string token UK
+        timestamp expiresAt
+        timestamp createdAt
+        timestamp updatedAt
+        string ipAddress
+        string userAgent
+        string userId FK
+    }
 ```
 
 #### 3.7 Logout Implementation
@@ -429,7 +428,7 @@ sequenceDiagram
     participant A as Better-Auth
     participant DB as PostgreSQL
 
-    U->>B: Klik "Logout"
+    U->>B: Klik Logout
     B->>N: POST /api/auth/signout
     N->>A: auth.api.signOut()
     A->>DB: Delete session record
@@ -460,9 +459,9 @@ flowchart TB
     A -->|has| P[Permissions]
     
     subgraph Ownership Check
-        R[Resource Request] --> C{creatorId<br/>===<br/>session.user.id?}
+        R[Resource Request] --> C{creatorId === session.user.id?}
         C -->|Yes| AL[Allow Access]
-        C -->|No| D[DENY Access<br/>throw UNAUTHORIZED]
+        C -->|No| D[DENY Access throw UNAUTHORIZED]
     end
     
     U --> C
@@ -507,18 +506,18 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
 ```mermaid
 flowchart TD
     A[API Request Received] --> B{Session Valid?}
-    B -->|No| E[Return 401<br/>UNAUTHORIZED]
+    B -->|No| E[Return 401 UNAUTHORIZED]
     B -->|Yes| C{User Exists?}
     C -->|No| E
-    C -->|Yes| D{Resource<br/>Requested?}
+    C -->|Yes| D{Resource Requested?}
     
-    D -->|No Resource| F[Allow<br/>Non-resource operation]
+    D -->|No Resource| F[Allow Non-resource operation]
     D -->|Yes| G{Is Owner?}
     
-    G -->|Yes| H[Allow<br/>Perform operation]
+    G -->|Yes| H[Allow Perform operation]
     G -->|No| I{Is Admin?}
     I -->|Yes| H
-    I -->|No| J[Return 403<br/>FORBIDDEN]
+    I -->|No| J[Return 403 FORBIDDEN]
     
     style E fill:#ff6b6b,color:#fff
     style J fill:#ffa94d,color:#fff
@@ -625,8 +624,8 @@ sequenceDiagram
 
     U->>M: Visit malicious page
     M->>B: Hidden form auto-submit
-    B->>A: POST /api/cards/create<br/>Cookie: user's session
-    A->>A: Execute action<br/>as authenticated user
+    B->>A: POST /api/cards/create Cookie: user's session
+    A->>A: Execute action as authenticated user
 ```
 
 **Mitigasi yang digunakan proyek ini:**
@@ -654,9 +653,9 @@ Session fixation attack: attacker menetapkan session ID korban ke nilai yang dik
 
 ```mermaid
 flowchart LR
-    A[Login Flow] --> B[Generate New<br/>Session ID]
-    B --> C[Set New Cookie<br/>with New ID]
-    C --> D[Invalidate Old<br/>Session ID]
+    A[Login Flow] --> B[Generate New Session ID]
+    B --> C[Set New Cookie with New ID]
+    C --> D[Invalidate Old Session ID]
 
     style B fill:#51cf66,color:#fff
     style C fill:#51cf66,color:#fff
@@ -742,23 +741,23 @@ flowchart TB
     A --> F[Brute Force]
     A --> G[Credential Stuffing]
 
-    B --> B1[Steal cookies<br/>via injected scripts]
-    B1 --> B2[HttpOnly cookies<br/>block access]
+    B --> B1[Steal cookies via injected scripts]
+    B1 --> B2[HttpOnly cookies block access]
     
-    C --> C1[Trigger actions<br/>via cross-site forms]
-    C1 --> C2[SameSite cookies<br/>block cross-site]
+    C --> C1[Trigger actions via cross-site forms]
+    C1 --> C2[SameSite cookies block cross-site]
     
-    D --> D1[Intercept session<br/>via network]
-    D1 --> D2[Secure + HTTPS<br/>prevents eavesdropping]
+    D --> D1[Intercept session via network]
+    D1 --> D2[Secure + HTTPS prevents eavesdropping]
     
-    E --> E1[Steal auth code<br/>via man-in-middle]
-    E1 --> E2[PKCE prevents<br/>code reuse]
+    E --> E1[Steal auth code via man-in-middle]
+    E1 --> E2[PKCE prevents code reuse]
     
-    F --> F1[Try many passwords<br/>rapidly]
-    F1 --> F2[Rate limiting<br/>blocks rapid attempts]
+    F --> F1[Try many passwords rapidly]
+    F1 --> F2[Rate limiting blocks rapid attempts]
     
-    G --> G1[Use leaked credentials<br/>from other sites]
-    G1 --> G2[OAuth prevents<br/>password reuse]
+    G --> G1[Use leaked credentials from other sites]
+    G1 --> G2[OAuth prevents password reuse]
 ```
 
 #### 6.2 Detail Serangan dan Mitigasi
@@ -820,55 +819,55 @@ await auditLog.insert({
 
 ```mermaid
 erDiagram
+    USER ||--o{ SESSION : has
+    USER ||--o{ ACCOUNT : has
+    USER ||--o{ VERIFICATION : has
+
     USER {
-        string id PK "UUID, primary key"
-        string name "Display name"
-        string email UK "Unique, indexed"
-        boolean emailVerified "Google OAuth verified"
-        string image "Profile picture URL"
-        timestamp createdAt "Account creation"
-        timestamp updatedAt "Last update"
+        string id PK
+        string name
+        string email UK
+        boolean emailVerified
+        string image
+        timestamp createdAt
+        timestamp updatedAt
     }
 
     SESSION {
-        string id PK "UUID"
-        string token UK "Unique session token"
-        timestamp expiresAt "Session expiration"
-        timestamp createdAt "Creation time"
-        timestamp updatedAt "Last activity"
-        string ipAddress "Client IP"
-        string userAgent "Browser info"
-        string userId FK "References user.id"
+        string id PK
+        string token UK
+        timestamp expiresAt
+        timestamp createdAt
+        timestamp updatedAt
+        string ipAddress
+        string userAgent
+        string userId FK
     }
 
     ACCOUNT {
-        string id PK "UUID"
-        string accountId "OAuth provider user ID"
-        string providerId "e.g., 'google'"
-        string userId FK "References user.id"
-        string accessToken "OAuth access token (encrypted)"
-        string refreshToken "OAuth refresh token (encrypted)"
-        string idToken "OAuth ID token"
-        timestamp accessTokenExpiresAt "Token expiration"
-        timestamp refreshTokenExpiresAt "Refresh expiration"
-        string scope "Granted permissions"
-        string password "NULL for OAuth (reserved)"
-        timestamp createdAt "Link time"
-        timestamp updatedAt "Last update"
+        string id PK
+        string accountId
+        string providerId
+        string userId FK
+        string accessToken
+        string refreshToken
+        string idToken
+        timestamp accessTokenExpiresAt
+        timestamp refreshTokenExpiresAt
+        string scope
+        string password
+        timestamp createdAt
+        timestamp updatedAt
     }
 
     VERIFICATION {
-        string id PK "UUID"
-        string identifier "Email or phone"
-        string value "Verification token"
-        timestamp expiresAt "Token expiration"
-        timestamp createdAt "Request time"
-        timestamp updatedAt "Last update"
+        string id PK
+        string identifier
+        string value
+        timestamp expiresAt
+        timestamp createdAt
+        timestamp updatedAt
     }
-
-    USER ||--o{ SESSION : "has many"
-    USER ||--o{ ACCOUNT : "has many"
-    USER ||--o{ VERIFICATION : "has many"
 ```
 
 #### 7.2 Schema Reference
@@ -902,7 +901,7 @@ File: `packages/db/src/schema/auth.ts`
 flowchart TB
     A[Incoming Request] --> B[Next.js App Router]
     B --> C[createContext]
-    C --> D[Extract headers<br/>cookie, authorization]
+    C --> D[Extract headers cookie, authorization]
     D --> E[auth.api.getSession]
     E --> F{Session Valid?}
     F -->|Yes| G[Return ctx with session]
@@ -937,8 +936,8 @@ flowchart LR
     end
     
     subgraph Access
-        A1[Anyone can access<br/>No auth required]
-        A2[Must be logged in<br/>Session required]
+        A1[Anyone can access No auth required]
+        A2[Must be logged in Session required]
     end
     
     P1 --> A1
@@ -955,9 +954,9 @@ flowchart LR
 ```mermaid
 flowchart TD
     A[API Request] --> B{Session exists?}
-    B -->|No| E[Throw TRPCError<br/>code: UNAUTHORIZED<br/>message: "Authentication required"]
-    B -->|Yes| C{User authorized<br/>for resource?}
-    C -->|No| F[Throw TRPCError<br/>code: FORBIDDEN<br/>message: "Not authorized"]
+    B -->|No| E[Throw TRPCError UNAUTHORIZED]
+    B -->|Yes| C{User authorized for resource?}
+    C -->|No| F[Throw TRPCError FORBIDDEN]
     C -->|Yes| D[Execute mutation/query]
     D --> G[Return result]
     E --> H[Return 401 to client]
@@ -990,7 +989,7 @@ flowchart TD
 - [OWASP OAuth2 Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html)
 - [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
 - [Google OAuth2 Best Practices](https://developers.google.com/identity/protocols/oauth2/resources/best-practices)
-- [Better-Auth Documentation](https://www.better-auth.com/)[^1]
+- [Better-Auth Documentation](https://www.better-auth.com/)
 
 ## Konfigurasi Environment
 
