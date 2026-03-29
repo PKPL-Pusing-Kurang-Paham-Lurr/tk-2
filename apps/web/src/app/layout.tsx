@@ -1,18 +1,65 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import {
+  Architects_Daughter,
+  Merriweather,
+  Courier_Prime,
+  Roboto,
+  Playfair_Display,
+  Lobster,
+  Pacifico,
+  Source_Code_Pro,
+} from "next/font/google";
 
 import "../index.css";
-import Header from "@/components/header";
 import Providers from "@/components/providers";
+import Navbar from "@/components/navbar";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const fontArchitectsDaughter = Architects_Daughter({
+  weight: "400",
   subsets: ["latin"],
+  variable: "--font-architects-daughter",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const fontMerriweather = Merriweather({
+  weight: "400",
   subsets: ["latin"],
+  variable: "--font-merriweather",
+});
+
+const fontCourierPrime = Courier_Prime({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-courier-prime",
+});
+
+const fontRoboto = Roboto({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-roboto",
+});
+
+const fontPlayfairDisplay = Playfair_Display({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-playfair-display",
+});
+
+const fontLobster = Lobster({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-lobster",
+});
+
+const fontPacifico = Pacifico({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-pacifico",
+});
+
+const fontSourceCodePro = Source_Code_Pro({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-source-code-pro",
 });
 
 export const metadata: Metadata = {
@@ -26,13 +73,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="en" data-theme="light">
+      <body className={`${fontArchitectsDaughter.variable} ${fontMerriweather.variable} ${fontCourierPrime.variable} ${fontRoboto.variable} ${fontPlayfairDisplay.variable} ${fontLobster.variable} ${fontPacifico.variable} ${fontSourceCodePro.variable} antialiased`}>
         <Providers>
-          <div className="grid grid-rows-[auto_1fr] h-svh">
-            <Header />
-            {children}
-          </div>
+          <Navbar />
+          {children}
         </Providers>
       </body>
     </html>

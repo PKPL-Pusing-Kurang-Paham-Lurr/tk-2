@@ -24,6 +24,7 @@
     "next": "catalog:",
     "next-themes": "catalog:",
     "react": "catalog:",
+    "react-colorful": "^5.6.1",
     "react-dom": "catalog:",
     "sonner": "catalog:",
     "zod": "catalog:"
