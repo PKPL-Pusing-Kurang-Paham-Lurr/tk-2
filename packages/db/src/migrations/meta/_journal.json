@@ -15,6 +15,13 @@
       "when": 1774775879220,
       "tag": "0001_mean_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774802753908,
+      "tag": "0002_special_ma_gnuci",
+      "breakpoints": true
     }
   ]
 }

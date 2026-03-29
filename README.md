@@ -663,68 +663,51 @@ flowchart LR
 
 Better-Auth secara otomatis membuat session ID baru saat login.
 
-#### 5.5 Rate Limiting Considerations
+#### 5.5 Rate Limiting
 
-Untuk proteksi terhadap brute force dan credential stuffing:
+Implementasi rate limiting menggunakan sliding window algorithm dengan in-memory storage:
 
 | Endpoint | Batas | Waktu Window |
 |----------|-------|--------------|
-| `/api/auth/signin` | 5 attempts | 15 minutes |
-| `/api/auth/signout` | 10 attempts | 1 minute |
-| `/api/trpc/*` | 100 requests | 1 minute |
+| `/api/auth/*` | 10 attempts | 15 minutes |
 
-**Catatan:** Rate limiting belum diimplementasi dalam versi saat ini. Untuk production, gunakan service seperti Upstash Redis atau Cloudflare.
+**Implementasi:**
+
+- File: `apps/web/src/proxy.ts`
+- Menggunakan Map in-memory dengan timestamps
+- Cleanup otomatis setiap 1000 entries
+- Headers response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+- Mengembalikan 429 Too Many Requests ketika limit exceeded
 
 #### 5.6 Security Headers
 
-Headers yang direkomendasikan untuk production:
+Headers keamanan yang dikonfigurasi di `apps/web/next.config.ts`:
 
 ```typescript
-// next.config.js atau middleware
-const securityHeaders = [
+headers: [
   {
-    key: 'X-DNS-Prefetch-Control',
-    value: 'on'
+    source: '/(.*)',
+    headers: [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Content-Security-Policy', value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'" },
+      { key: 'X-XSS-Protection', value: '1; mode=block' },
+    ],
   },
-  {
-    key: 'Strict-Transport-Security',
-    value: 'max-age=63072000; includeSubDomains; preload'
-  },
-  {
-    key: 'X-Content-Type-Options',
-    value: 'nosniff'
-  },
-  {
-    key: 'X-Frame-Options',
-    value: 'DENY'
-  },
-  {
-    key: 'X-XSS-Protection',
-    value: '1; mode=block'
-  },
-  {
-    key: 'Referrer-Policy',
-    value: 'strict-origin-when-cross-origin'
-  },
-];
+]
 ```
 
 #### 5.7 Environment Variables Security
 
-| Variable |强度的要求 | Storage |
+| Variable | Keterangan | Storage |
 |----------|-----------|---------|
 | `BETTER_AUTH_SECRET` | Min 32 chars, random | .env (dev), Secret Manager (prod) |
 | `GOOGLE_CLIENT_SECRET` | High entropy | .env (dev), Secret Manager (prod) |
 | `DATABASE_URL` | With SSL mode | .env (dev), Secret Manager (prod) |
 
-**⚠️ PERINGATAN: Jangan commit .env ke git!**
 
-```bash
-# .gitignore
-.env
-.env.*
-*.local
-```
 
 ---
 
@@ -769,47 +752,20 @@ flowchart TB
 | **Session Hijacking** | Steal session token | Secure cookies, HTTPS only |
 | **OAuth Code Interception** | Steal auth code | PKCE required |
 | **Man-in-the-Middle** | Eavesdrop on traffic | HTTPS enforced, Secure cookies |
-| **Brute Force** | Guess credentials rapidly | Rate limiting (not impl), OAuth (no passwords) |
+| **Brute Force** | Guess credentials rapidly | Rate limiting (implemented), OAuth (no passwords) |
 
-#### 6.3 Security Recommendations untuk Production
+#### 6.3 Security yang Telah Diimplementasi
 
-**Yang sudah diimplementasi:**
+**Fitur keamanan yang sudah terimplementasi:**
 
 - ✅ Cookie dengan HttpOnly, Secure, SameSite attributes
 - ✅ OAuth2 dengan PKCE
 - ✅ Session signed cryptographically
 - ✅ HTTPS enforced untuk database connection
 - ✅ Ownership-based authorization
-
-**Yang perlu ditambahkan untuk production:**
-
-```typescript
-// 1. Rate Limiting
-const rateLimit = {
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per window
-};
-
-// 2. Security Headers (via next.config.js)
-headers: [
-  {
-    source: '/(.*)',
-    headers: [
-      { key: 'X-Frame-Options', value: 'DENY' },
-      { key: 'X-Content-Type-Options', value: 'nosniff' },
-      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-    ],
-  },
-];
-
-// 3. Audit Logging
-await auditLog.insert({
-  action: 'AUTH_LOGIN',
-  userId: user.id,
-  ip: request.headers.get('x-forwarded-for'),
-  timestamp: new Date(),
-});
-```
+- ✅ Rate Limiting (10 requests/15 menit untuk `/api/auth/*`)
+- ✅ Security Headers (X-Frame-Options, CSP, HSTS, dll)
+- ✅ Audit Logging untuk auth events
 
 ---
 
@@ -822,6 +778,7 @@ erDiagram
     USER ||--o{ SESSION : has
     USER ||--o{ ACCOUNT : has
     USER ||--o{ VERIFICATION : has
+    USER ||--o{ AUDIT_LOG : has
 
     USER {
         string id PK
@@ -868,6 +825,16 @@ erDiagram
         timestamp createdAt
         timestamp updatedAt
     }
+
+    AUDIT_LOG {
+        string id PK
+        string action
+        string userId FK
+        string ipAddress
+        string userAgent
+        json metadata
+        timestamp createdAt
+    }
 ```
 
 #### 7.2 Schema Reference
@@ -880,6 +847,7 @@ File: `packages/db/src/schema/auth.ts`
 | `session` | `id` | `token` | `session_userId_idx` | `userId → user.id` |
 | `account` | `id` | - | `account_userId_idx` | `userId → user.id` |
 | `verification` | `id` | - | `verification_identifier_idx` | - |
+| `audit_log` | `id` | - | - | - |
 
 #### 7.3 Security Considerations Schema
 
