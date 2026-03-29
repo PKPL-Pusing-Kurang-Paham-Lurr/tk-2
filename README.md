@@ -37,208 +37,960 @@ tk2-pkpl/
 │   └── db/          # Database schema & queries
 ```
 
-## Arsitektur Autentikasi (dengan Better-Auth)
+## Autentikasi & Otorisasi
 
-Better-Auth adalah library autentikasi yang menggunakan pendekatan **cookie-based session management**. Berikut cara kerja internal Better-Auth:
+Proyek ini menggunakan **Better-Auth** - library autentikasi modern yang mengimplementasikan **cookie-based session management** dengan Google OAuth sebagai provider. Berikut dokumentasi komprehensif tentang arsitektur keamanan, OAuth2, session management, dan best practices.
 
-### Model Data Session
+---
 
-Better-Auth menggunakan 4 tabel utama di database:
+### Daftar Isi
+
+1. [Ringkasan Arsitektur](#1-ringkasan-arsitektur)
+2. [OAuth2 dengan PKCE](#2-oauth2-dengan-pkce)
+3. [Manajemen Session](#3-manajemen-session)
+4. [Otorisasi & Access Control](#4-otorisasi--access-control)
+5. [Keamanan & Best Practices](#5-keamanan--best-practices)
+6. [Serangan & Mitigasi](#6-serangan--mitigasi)
+7. [Schema Database](#7-schema-database)
+8. [Integrasi tRPC](#8-integrasi-trpc)
+
+---
+
+### 1. Ringkasan Arsitektur
+
+#### 1.1 Diagram Arsitektur High-Level
 
 ```mermaid
-erDiagram
-    USER {
-        string id PK
-        string name
-        string email UK
-        boolean emailVerified
-        string image
-        timestamp createdAt
-        timestamp updatedAt
-    }
+flowchart TB
+    subgraph External
+        Google[(Google OAuth<br/>Provider)]
+    end
     
-    SESSION {
-        string id PK
-        timestamp expiresAt
-        string token UK
-        timestamp createdAt
-        timestamp updatedAt
-        string ipAddress
-        string userAgent
-        string userId FK
-    }
+    subgraph Application
+        subgraph Frontend
+            Browser[Browser<br/>User]
+            LoginPage[Login Page<br/>/login]
+            DashboardPage[Dashboard Page<br/>/dashboard]
+        end
+        
+        subgraph Backend
+            AuthHandler[Auth Handler<br/>/api/auth/*]
+            SessionCookie[Session Cookie<br/>httpOnly, secure, signed]
+            ContextAPI[Context API<br/>createContext]
+        end
+        
+        subgraph API
+            TRPC[tRPC Router]
+            PublicProc[publicProcedure]
+            ProtectedProc[protectedProcedure]
+        end
+        
+        subgraph Data
+            PostgreSQL[(PostgreSQL<br/>Database)]
+            UserTable[user]
+            SessionTable[session]
+            AccountTable[account]
+        end
+    end
     
-    ACCOUNT {
-        string id PK
-        string accountId
-        string providerId
-        string userId FK
-        string accessToken
-        string refreshToken
-        string idToken
-        timestamp accessTokenExpiresAt
-        timestamp refreshTokenExpiresAt
-        string scope
-        string password
-        timestamp createdAt
-        timestamp updatedAt
-    }
-    
-    VERIFICATION {
-        string id PK
-        string identifier
-        string value
-        timestamp expiresAt
-        timestamp createdAt
-        timestamp updatedAt
-    }
-    
-    USER ||--o{ SESSION : "has"
-    USER ||--o{ ACCOUNT : "has"
-    USER ||--o{ VERIFICATION : "has"
+    Browser -->|1. signIn.social| LoginPage
+    LoginPage -->|2. Redirect| Google
+    Google -->|3. Callback<br/>/api/auth/callback/google| AuthHandler
+    AuthHandler -->|4. Create Session| PostgreSQL
+    AuthHandler -->|5. Set Cookie| SessionCookie
+    SessionCookie -->|6. Request with Cookie| ContextAPI
+    ContextAPI -->|7. getSession| TRPC
+    TRPC -->|8. Route| PublicProc
+    TRPC -->|9. Route| ProtectedProc
+    ProtectedProc -->|10. Access| PostgreSQL
 ```
 
-### Alur Autentikasi Lengkap
+#### 1.2 Stack Teknologi Keamanan
 
-#### 1. Login dengan Google OAuth
+| Komponen | Teknologi | Fungsi |
+|----------|-----------|--------|
+| Auth Library | Better-Auth v1.5.2 | Cookie-based session management |
+| OAuth Provider | Google OAuth 2.0 | Identity provider dengan PKCE |
+| Database | PostgreSQL + Drizzle ORM | Persistent session storage |
+| API Layer | tRPC | Type-safe API dengan middleware auth |
+| Session Storage | Cryptographically signed cookies | Stateless verification |
+
+#### 1.3 Alur Autentikasi Overview
 
 ```mermaid
 sequenceDiagram
-    participant User as Browser
-    participant Next as Next.js App
-    participant Google as Google OAuth
-    participant Auth as Better-Auth
+    participant U as User
+    participant B as Browser
+    participant N as Next.js App
+    participant G as Google OAuth
+    participant A as Better-Auth
     participant DB as PostgreSQL
 
-    User->>Next: Klik "Login dengan Google"
-    Next->>Google: Redirect ke Google OAuth Consent
-    Note over Google: User memberikan izin akses<br/>email, profile, dll
-    
-    Google->>Next: Callback dengan authorization code<br/>/api/auth/callback/google
-    Next->>Auth: Verifikasi token & buat session
-    Auth->>DB: Simpan/update user & account
-    Auth->>DB: Buat session record
-    Auth-->>User: Set session cookie<br/>(httpOnly, secure, signed)
-    User->>Next: Akses /dashboard dengan cookie
-    Next->>Auth: Validasi cookie + fetch session
-    Auth->>DB: Cek session masih valid?
-    DB-->>Auth: Session data
-    Auth-->>Next: User ter-autentikasi
-    Next-->>User: Tampilkan halaman dashboard
+    rect rgb(240, 248, 255)
+        Note over U,B: Phase 1: Initiation
+        U->>B: Klik "Login dengan Google"
+        B->>N: Akses /login
+        N-->>B: Tampilkan login page
+    end
+
+    rect rgb(255, 250, 240)
+        Note over G,N: Phase 2: OAuth Redirect
+        B->>G: Redirect ke Google OAuth<br/>client_id, redirect_uri,<br/>scope, state, code_challenge
+        Note over G: User login & consent
+        G-->>B: Authorization Code + state
+    end
+
+    rect rgb(240, 255, 240)
+        Note over A,DB: Phase 3: Token Exchange & Session Creation
+        B->>N: Callback /api/auth/callback/google
+        N->>A: Verifikasi code + code_verifier
+        A->>G: exchangeCodeForTokens(code, code_verifier)
+        G-->>A: access_token, refresh_token, id_token
+        A->>DB: Upsert user record
+        A->>DB: Create session record
+    end
+
+    rect rgb(255, 240, 245)
+        Note over A,B: Phase 4: Session Established
+        A-->>B: Set-Cookie: session_token<br/>(httpOnly, Secure, SameSite)
+        B->>N: Request ke /dashboard<br/>Cookie: session_token
+        N->>A: getSession(headers)
+        A-->>N: { user, session }
+        N-->>B: Render dashboard
+    end
 ```
 
-#### 2. Session Management (Stateless Verification)
+---
 
-Better-Auth menggunakan pendekatan **stateless session** - cookie ditandatangani secara kriptografis sehingga validasi session tidak memerlukan query database setiap saat:
+### 2. OAuth2 dengan PKCE
+
+#### 2.1 Apa itu OAuth 2.0?
+
+OAuth 2.0 adalah **authorization framework** yang memungkinkan aplikasi pihak ketiga mendapatkan akses terbatas ke resource user tanpa harus menyimpan password user. Versi yang digunakan proyek ini adalah **Authorization Code Grant** dengan **PKCE (Proof Key for Code Exchange)**.
+
+#### 2.2 Mengapa Google OAuth?
+
+| Pertimbangan | Penjelasan |
+|--------------|------------|
+| **Keamanan** | Google menangani keamanan kredensial, 2FA, suspicious activity detection |
+| **Trust** | User lebih percaya login dengan Google yang sudah mereka percaya |
+| **Kompleksitas** | Tidak perlu implementasi password reset, email verification, dll |
+| **Compliance** | Mudah comply dengan GDPR, karena Google sudah compliant |
+
+#### 2.3 OAuth 2.0 Authorization Code Flow dengan PKCE
+
+PKCE adalah mekanisme keamanan yang **wajib** untuk client aplikasi publik (SPAs, mobile apps) untuk mencegah **authorization code interception attack**.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant B as Browser
+    participant N as Next.js App
+    participant G as Google OAuth Server
+
+    rect rgb(230, 245, 255)
+        Note over B,N: Step 1-2: Generate PKCE Code Verifier & Challenge
+        N->>N: Generate random code_verifier<br/>43-128 characters
+        N->>N: SHA256 hash of code_verifier
+        N->>N: Base64URL encode to get code_challenge
+    end
+
+    rect rgb(255, 245, 230)
+        Note over B,G: Step 3: Authorization Request
+        B->>G: GET /authorize?<br/>client_id<br/>response_type=code<br/>redirect_uri<br/>scope=openid profile email<br/>state={csrf_token}<br/>code_challenge={challenge}<br/>code_challenge_method=S256
+    end
+
+    rect rgb(245, 255, 230)
+        Note over G,B: Step 4-5: User Authentication
+        G->>G: Display consent screen<br/>"App wants access to:<br/>- Email<br/>- Profile"
+        U->>G: User clicks "Allow"
+    end
+
+    rect rgb(255, 230, 245)
+        Note over G,N: Step 6: Authorization Code Issued
+        G-->>B: 302 Redirect to redirect_uri?<br/>code={auth_code}&state={csrf_token}
+    end
+
+    rect rgb(245, 230, 255)
+        Note over B,N: Step 7-8: Exchange Code for Tokens
+        B->>N: POST /token<br/>grant_type=authorization_code<br/>code={auth_code}<br/>code_verifier={original_verifier}<br/>client_id<br/>redirect_uri
+        N->>G: Verify code_verifier matches
+        G-->>N: access_token<br/>refresh_token<br/>id_token<br/>expires_in
+    end
+
+    Note over N: Store tokens securely
+```
+
+#### 2.4 Detail Parameter OAuth
+
+**Authorization Request Parameters:**
+
+| Parameter | Nilai | Deskripsi |
+|-----------|-------|-----------|
+| `client_id` | `GOOGLE_CLIENT_ID` | Identitas aplikasi di Google |
+| `response_type` | `code` | Request authorization code |
+| `redirect_uri` | `/api/auth/callback/google` | Endpoint callback |
+| `scope` | `openid profile email` | Permissions yang diminta |
+| `state` | Random CSRF token | Protection against CSRF |
+| `code_challenge` | Base64URL(SHA256(verifier)) | PKCE challenge |
+| `code_challenge_method` | `S256` | SHA256 hash method |
+
+**Token Response:**
+
+```json
+{
+  "access_token": "ya29.a0AfH6...",
+  "expires_in": 3599,
+  "refresh_token": "1//0gCy...",
+  "scope": "openid profile email",
+  "token_type": "Bearer",
+  "id_token": "eyJhbGciOiJSUzI1NiIs..."
+}
+```
+
+#### 2.5 Mengapa PKCE Penting?
+
+Tanpa PKCE, attacker bisa mencuri authorization code melalui:
 
 ```mermaid
 flowchart LR
-    A[Request dengan<br/>Session Cookie] --> B{Cookie Signature<br/>Valid?}
-    B -->|Ya| C{Session<br/>Expired?}
-    B -->|Tidak| D[UNAUTHORIZED<br/>Redirect /login]
-    C -->|Tidak| E[Ambil user data<br/>dari cookie payload]
-    E --> F[Optional: Cek ke DB<br/>untuk data real-time]
-    F --> G[Allow Access<br/>Lakukan operasi]
-    C -->|Ya| D
+    A[Attacker] -->|1. Setup malicious site| M[Malicious Site]
+    M -->|2. Victim visits| M
+    M -->|3. Redirect to legitimate<br/>OAuth with attacker's callback| G[Google]
+    G -->|4. Victim authenticates<br/>& consents| G
+    G -->|5. Redirect with code<br/>to attacker's server| M
+    M -->|6. Steal authorization code| A
+    A -->|7. Exchange code for tokens| G
+    G -->|8. Attacker gets tokens| A
 ```
 
-**Keuntungan Statless Session:**
-- Tidak perlu query database untuk setiap request
-- Lebih cepat karena payload session sudah ada di cookie
-- Bisa discale tanpa shared session store
+**PKCE prevents this by requiring the original code_verifier that only the legitimate client knows.**
 
-#### 3. Proteksi Route
+#### 2.6 Scope dan Izin Akses
+
+Google OAuth scopes yang digunakan:
+
+| Scope | Akses yang Diberikan |
+|-------|---------------------|
+| `openid` | OpenID Connect authentication |
+| `profile` | Nama, foto profil, URL profile |
+| `email` | Alamat email yang terverifikasi |
+
+**Catatan:** Scope `https://www.googleapis.com/auth/calendar` atau scope lain **tidak di-request** karena tidak diperlukan aplikasi ini.
+
+---
+
+### 3. Manajemen Session
+
+#### 3.1 Arsitektur Session
+
+Proyek ini menggunakan **signed cookie session** dengan PostgreSQL sebagai backing store. Ini berbeda dari pure stateless JWT karena:
+
+| Aspek | Signed Cookie Session | Pure JWT |
+|-------|----------------------|----------|
+| **Storage** | Cookie + DB | Cookie only |
+| **Revocation** | Immediate (DB delete) | Must use blocklist |
+| **Server Check** | Optional per-request | No |
+| **Cookie Size** | Small (session ID only) | Larger (full claims) |
+
+#### 3.2 Cookie Security Attributes
+
+```mermaid
+flowchart TB
+    A[Session Cookie] --> B[secure]
+    A --> C[httpOnly]
+    A --> D[sameSite]
+    A --> E[path]
+    A --> F[domain]
+    A --> G[expires]
+
+    B --> B1["✅ HTTPS only<br/>Tidak dikirim via HTTP"]
+    C --> C1["✅ No JS Access<br/>Prevent XSS theft"]
+    D --> D2["✅ CSRF Protection<br/>'strict' atau 'lax'"]
+    E --> E1["✅ Path restriction<br/>/api/*"]
+    F --> F1["✅ Origin only<br/>Tidak ada subdomain leak"]
+    G --> G1["✅ Expiration<br/>7 days default"]
+```
+
+**Implementasi di Better-Auth:**
+
+Better-Auth secara otomatis mengset cookie dengan atribut yang aman melalui plugin `nextCookies()`:
+
+```typescript
+//packages/auth/src/index.ts
+export const auth = betterAuth({
+  // ... config
+  plugins: [nextCookies()], // Auto handles cookie security
+});
+```
+
+**Hasil cookie yang di-set:**
+
+```
+Set-Cookie: better-auth.session_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...; 
+  Path=/; 
+  HttpOnly; 
+  Secure; 
+  SameSite=Lax; 
+  Max-Age=604800
+```
+
+#### 3.3 Session Lifecycle State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Created: User signs in
+    Created --> Active: Cookie set in browser
+    Active --> Active: Client requests<br/>with valid cookie
+    Active --> Validating: Server receives request
+    Validating --> Active: Session valid<br/>Token not expired
+    Validating --> Expired: Token expired
+    Validating --> Invalid: Signature mismatch
+    Expired --> [*]: Session deleted
+    Invalid --> [*]: Session deleted
+    Active --> Refreshed: Token refreshed
+    Refreshed --> Active: New cookie issued
+    Active --> Revoked: User logs out
+    Revoked --> [*]: Session deleted
+```
+
+#### 3.4 Session Validation Flow (Stateless dengan DB Check)
+
+```mermaid
+flowchart TD
+    A[Incoming Request] --> B{Parse Cookie}
+    B -->|Invalid Format| E[Return 401]
+    B -->|Valid Format| C{Cryptographic<br/>Signature Valid?}
+    C -->|No| E
+    C -->|Yes| D{Session<br/>Expired?}
+    D -->|Yes| F[Return 401<br/>Session Expired]
+    D -->|No| G{User Still<br/>Exists in DB?}
+    G -->|No| H[Return 401<br/>User Deleted]
+    G -->|Yes| I{IP Address<br/>Changed?}
+    I -->|Yes| J[Optional: Log<br/>Suspicious Activity]
+    I -->|No| K[Allow Access<br/>Return Session Data]
+    
+    style E fill:#ff6b6b,color:#fff
+    style F fill:#ff6b6b,color:#fff
+    style H fill:#ff6b6b,color:#fff
+    style K fill:#51cf66,color:#fff
+```
+
+**Keuntungan pendekatan ini:**
+
+1. **Tidak perlu query DB untuk setiap request** - Signature validation cukup untuk kebanyakan kasus
+2. **DB check hanya untuk data real-time** - Cek apakah user masih ada, session belum di-revoke
+3. **Bisa discale horizontally** - Karena signature bisa di-verify tanpa shared state
+
+#### 3.5 Session Data Structure
+
+Cookie payload berisi data session yang di-sign:
+
+```typescript
+// Simplified session payload structure
+interface SessionPayload {
+  sub: string;           // User ID
+  iat: number;          // Issued at (timestamp)
+  exp: number;          // Expires at (timestamp)
+  jti: string;          // Unique session ID
+  ip?: string;          // IP address (optional)
+  ua?: string;          // User agent (optional)
+}
+
+// Signed with HMAC-SHA256 using BETTER_AUTH_SECRET
+// Never contains: password, access tokens, refresh tokens
+```
+
+#### 3.6 Referensi Session Table
+
+```mermaid
+erTable
+    session as "session"
+    cols:
+        - id: string (PK) - UUID, primary key
+        - token: string (UK) - Unique session token
+        - expiresAt: timestamp - When session expires
+        - createdAt: timestamp - Creation time
+        - updatedAt: timestamp - Last update time
+        - ipAddress: string - Client IP address
+        - userAgent: string - Browser/client info
+        - userId: string (FK) - Reference to user.id
+    indexes:
+        - session_userId_idx on userId
+```
+
+#### 3.7 Logout Implementation
 
 ```mermaid
 sequenceDiagram
-    participant Browser
-    participant Next as Next.js<br/>Middleware
-    participant Auth as Better-Auth<br/>getSessionCookie
-    participant Page as Dashboard<br/>Page Component
+    participant U as User
+    participant B as Browser
+    participant N as Next.js App
+    participant A as Better-Auth
+    participant DB as PostgreSQL
 
-    Browser->>Next: GET /dashboard
-    Next->>Auth: Cek session cookie
-    Auth-->>Next: Session valid?
-    
-    alt Session Tidak Ada / Invalid
-        Next-->>Browser: 302 Redirect ke /login
-    end
-    
-    alt Session Valid
-        Next->>Page: Render dengan session data
-        Page->>Auth: auth.api.getSession<br/>(headers)
-        Auth->>Auth: Decode & verify cookie
-        Auth->>Auth: Return user data
-        Page-->>Browser: Render dashboard<br/>dengan user info
-    end
+    U->>B: Klik "Logout"
+    B->>N: POST /api/auth/signout
+    N->>A: auth.api.signOut()
+    A->>DB: Delete session record
+    DB-->>A: Session deleted
+    A-->>B: Clear-Cookie: better-auth.session_token
+    N-->>B: Redirect to /login
+    B->>N: GET /login
+    N-->>B: Show login page
 ```
 
-### Konfigurasi Better-Auth
+**Keamanan logout:**
 
-File: `packages/auth/src/index.ts`
+- Session di-DB dihapus (tidak bisa di-reuse)
+- Cookie di-clear dari browser
+- Tidak perlu menunggu expire
+
+---
+
+### 4. Otorisasi & Access Control
+
+#### 4.1 Model Otorisasi
+
+Proyek ini mengimplementasikan **resource-based authorization** dengan **ownership model**:
+
+```mermaid
+flowchart TB
+    A[Resource] -->|belongs to| U[User]
+    A -->|has| P[Permissions]
+    
+    subgraph Ownership Check
+        R[Resource Request] --> C{creatorId<br/>===<br/>session.user.id?}
+        C -->|Yes| AL[Allow Access]
+        C -->|No| D[DENY Access<br/>throw UNAUTHORIZED]
+    end
+    
+    U --> C
+    P -->|read| AL
+    P -->|write| AL
+    P -->|delete| AL
+```
+
+#### 4.2 Procedure Types
+
+| Procedure | Auth Required | Use Case |
+|-----------|--------------|----------|
+| `publicProcedure` | ❌ Tidak | Health check, public data |
+| `protectedProcedure` | ✅ Ya | User-specific operations |
+
+**Implementasi middleware (`packages/api/src/index.ts`):**
 
 ```typescript
-export const auth = betterAuth({
-  // Adapter database (Drizzle ORM + PostgreSQL)
-  database: drizzleAdapter(db, {
-    provider: "pg",
-    schema: schema,
-  }),
-  
-  // Origin yang dipercaya untuk CORS
-  trustedOrigins: [env.CORS_ORIGIN],
-  
-  // Social providers (Google OAuth)
-  socialProviders: {
-    google: {
-      clientId: env.GOOGLE_CLIENT_ID,
-      clientSecret: env.GOOGLE_CLIENT_SECRET,
+// publicProcedure - tidak ada validasi session
+export const publicProcedure = t.procedure;
+
+// protectedProcedure - wajib ada session
+export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.session) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Authentication required",
+      cause: "No valid session",
+    });
+  }
+  return next({
+    ctx: {
+      ...ctx,
+      session: ctx.session,
     },
-  },
-  
-  // Secret untuk signing cookie (min 32 chars)
-  secret: env.BETTER_AUTH_SECRET,
-  
-  // Base URL aplikasi
-  baseURL: env.BETTER_AUTH_URL,
-  
-  // Plugin untuk Next.js (auto cookie handling)
+  });
+});
+```
+
+#### 4.3 Authorization Decision Tree
+
+```mermaid
+flowchart TD
+    A[API Request Received] --> B{Session Valid?}
+    B -->|No| E[Return 401<br/>UNAUTHORIZED]
+    B -->|Yes| C{User Exists?}
+    C -->|No| E
+    C -->|Yes| D{Resource<br/>Requested?}
+    
+    D -->|No Resource| F[Allow<br/>Non-resource operation]
+    D -->|Yes| G{Is Owner?}
+    
+    G -->|Yes| H[Allow<br/>Perform operation]
+    G -->|No| I{Is Admin?}
+    I -->|Yes| H
+    I -->|No| J[Return 403<br/>FORBIDDEN]
+    
+    style E fill:#ff6b6b,color:#fff
+    style J fill:#ffa94d,color:#fff
+    style F fill:#51cf66,color:#fff
+    style H fill:#51cf66,color:#fff
+```
+
+#### 4.4 Contoh: Card Ownership Authorization
+
+Berikut contoh authorization di `packages/api/src/routers/card.ts`:
+
+```typescript
+// Mutation: Update Card
+update: protectedProcedure
+  .input(z.object({ id: z.number(), title: z.string().optional() }))
+  .mutation(async ({ ctx, input }) => {
+    // 1. Cek card exists
+    const existing = await db.query.card.findFirst({
+      where: eq(card.id, input.id),
+    });
+    
+    if (!existing) {
+      throw new Error("Card not found"); // 404-like
+    }
+    
+    // 2. CEK OWNERSHIP - Resource-level authorization
+    if (existing.creatorId !== ctx.session.user.id) {
+      throw new TRPCError({
+        code: "FORBIDDEN",
+        message: "Not authorized to update this card",
+      });
+    }
+    
+    // 3. Perform update
+    return await db.update(card).set(input).where(eq(card.id, input.id));
+  }),
+
+// Mutation: Delete Card (sama pattern-nya)
+delete: protectedProcedure
+  .input(z.object({ id: z.number() }))
+  .mutation(async ({ ctx, input }) => {
+    const existing = await db.query.card.findFirst({
+      where: eq(card.id, input.id),
+    });
+    
+    if (!existing) throw new Error("Card not found");
+    
+    // Ownership check
+    if (existing.creatorId !== ctx.session.user.id) {
+      throw new TRPCError({
+        code: "FORBIDDEN", 
+        message: "Not authorized to delete this card",
+      });
+    }
+    
+    return await db.delete(card).where(eq(card.id, input.id));
+  }),
+```
+
+#### 4.5 Pattern Otorisasi yang Digunakan
+
+| Pattern | Deskripsi | Contoh |
+|---------|-----------|--------|
+| **Ownership Check** | Pemilik resource boleh modify | `if (resource.creatorId !== user.id)` |
+| **Role Check** | Role tertentu boleh akses | `if (user.role !== 'admin')` (not implemented) |
+| **Scope Check** | Scope token tertentu | `if (!hasScope('admin:write'))` (not implemented) |
+
+**Catatan:** Proyek ini hanya menggunakan **ownership check**. Untuk aplikasi yang lebih kompleks, pertimbangkan RBAC (Role-Based Access Control).
+
+---
+
+### 5. Keamanan & Best Practices
+
+#### 5.1 Cookie Security Checklist
+
+| Attribut | Nilai | Mengapa Penting |
+|----------|-------|----------------|
+| `HttpOnly` | `true` | Mencegah JavaScript membaca cookie (XSS protection) |
+| `Secure` | `true` | Cookie hanya dikirim via HTTPS |
+| `SameSite` | `Lax` atau `Strict` | Mencegah CSRF attack |
+| `Path` | `/` | Batasi scope cookie |
+| `Max-Age` | `604800` (7 days) | Expiration untuk membatasi exposure |
+
+**Implementasi di Better-Auth:**
+
+```typescript
+//better-auth otomatis meng-set atribut yang aman
+export const auth = betterAuth({
+  secret: env.BETTER_AUTH_SECRET, // Min 32 characters
   plugins: [nextCookies()],
 });
 ```
 
-### Schema Database (PostgreSQL)
+#### 5.2 CSRF (Cross-Site Request Forgery) Protection
 
-File: `packages/db/src/schema/auth.ts`
+**Apa itu CSRF?**
 
-| Tabel | Fungsi |
-|-------|--------|
-| `user` | Profil user (id, name, email, image, emailVerified) |
-| `session` | Session aktif (token, expiresAt, userId, ipAddress, userAgent) |
-| `account` | Akun OAuth yang terhubung ke user (providerId, accessToken, refreshToken) |
-| `verification` | Token verifikasi email, reset password |
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant M as Malicious Site
+    participant B as Browser
+    participant A as App
 
-### tRPC Integration dengan Auth
+    U->>M: Visit malicious page
+    M->>B: Hidden form auto-submit
+    B->>A: POST /api/cards/create<br/>Cookie: user's session
+    A->>A: Execute action<br/>as authenticated user
+```
 
-Better-Auth terintegrasi dengan tRPC melalui middleware:
+**Mitigasi yang digunakan proyek ini:**
+
+1. **SameSite Cookie** - Browser memblokir cross-site request
+2. **State Parameter di OAuth** - CSRF token saat login
+3. **GET vs POST distinction** - State-changing operations harus POST
+
+#### 5.3 XSS (Cross-Site Scripting) Prevention
+
+**Mitigasi yang digunakan:**
+
+| Technique | Implementasi |
+|-----------|--------------|
+| **Content Security Policy** | Browser policy untuk block inline scripts |
+| **HttpOnly Cookies** | Token tidak bisa di akses via JavaScript |
+| **Output Encoding** | React secara default meng-encode output |
+| **Input Validation** | Zod schema validation di tRPC |
+
+#### 5.4 Session Fixation Prevention
+
+Session fixation attack: attacker menetapkan session ID korban ke nilai yang diketahui.
+
+**Mitigasi:**
+
+```mermaid
+flowchart LR
+    A[Login Flow] --> B[Generate New<br/>Session ID]
+    B --> C[Set New Cookie<br/>with New ID]
+    C --> D[Invalidate Old<br/>Session ID]
+
+    style B fill:#51cf66,color:#fff
+    style C fill:#51cf66,color:#fff
+```
+
+Better-Auth secara otomatis membuat session ID baru saat login.
+
+#### 5.5 Rate Limiting Considerations
+
+Untuk proteksi terhadap brute force dan credential stuffing:
+
+| Endpoint | Batas | Waktu Window |
+|----------|-------|--------------|
+| `/api/auth/signin` | 5 attempts | 15 minutes |
+| `/api/auth/signout` | 10 attempts | 1 minute |
+| `/api/trpc/*` | 100 requests | 1 minute |
+
+**Catatan:** Rate limiting belum diimplementasi dalam versi saat ini. Untuk production, gunakan service seperti Upstash Redis atau Cloudflare.
+
+#### 5.6 Security Headers
+
+Headers yang direkomendasikan untuk production:
+
+```typescript
+// next.config.js atau middleware
+const securityHeaders = [
+  {
+    key: 'X-DNS-Prefetch-Control',
+    value: 'on'
+  },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload'
+  },
+  {
+    key: 'X-Content-Type-Options',
+    value: 'nosniff'
+  },
+  {
+    key: 'X-Frame-Options',
+    value: 'DENY'
+  },
+  {
+    key: 'X-XSS-Protection',
+    value: '1; mode=block'
+  },
+  {
+    key: 'Referrer-Policy',
+    value: 'strict-origin-when-cross-origin'
+  },
+];
+```
+
+#### 5.7 Environment Variables Security
+
+| Variable |强度的要求 | Storage |
+|----------|-----------|---------|
+| `BETTER_AUTH_SECRET` | Min 32 chars, random | .env (dev), Secret Manager (prod) |
+| `GOOGLE_CLIENT_SECRET` | High entropy | .env (dev), Secret Manager (prod) |
+| `DATABASE_URL` | With SSL mode | .env (dev), Secret Manager (prod) |
+
+**⚠️ PERINGATAN: Jangan commit .env ke git!**
+
+```bash
+# .gitignore
+.env
+.env.*
+*.local
+```
+
+---
+
+### 6. Serangan & Mitigasi
+
+#### 6.1 Attack Vectors Overview
 
 ```mermaid
 flowchart TB
-    subgraph Context
-        A[createContext] --> B[auth.api.getSession<br/>headers: req.headers]
-        B --> C[Session Object<br/>atau null]
-    end
+    A[Attack Vectors] --> B[XSS]
+    A --> C[CSRF]
+    A --> D[Session Hijacking]
+    A --> E[OAuth Code Theft]
+    A --> F[Brute Force]
+    A --> G[Credential Stuffing]
+
+    B --> B1[Steal cookies<br/>via injected scripts]
+    B1 --> B2[HttpOnly cookies<br/>block access]
     
-    subgraph Procedures
-        D[publicProcedure] --> E[Tanpa cek session<br/>Bebas diakses]
-        F[protectedProcedure] --> G{Cek session<br/>ada?}
-        G -->|Ya| H[Lanjut dengan<br/>ctx.session.user]
-        G -->|Tidak| I[throw TRPCError<br/>UNAUTHORIZED]
-    end
+    C --> C1[Trigger actions<br/>via cross-site forms]
+    C1 --> C2[SameSite cookies<br/>block cross-site]
     
-    C --> D
-    C --> F
+    D --> D1[Intercept session<br/>via network]
+    D1 --> D2[Secure + HTTPS<br/>prevents eavesdropping]
+    
+    E --> E1[Steal auth code<br/>via man-in-middle]
+    E1 --> E2[PKCE prevents<br/>code reuse]
+    
+    F --> F1[Try many passwords<br/>rapidly]
+    F1 --> F2[Rate limiting<br/>blocks rapid attempts]
+    
+    G --> G1[Use leaked credentials<br/>from other sites]
+    G1 --> G2[OAuth prevents<br/>password reuse]
 ```
+
+#### 6.2 Detail Serangan dan Mitigasi
+
+| Serangan | Deskripsi | Mitigasi di Proyek Ini |
+|----------|-----------|----------------------|
+| **XSS** | Inject malicious scripts | HttpOnly cookies, CSP headers |
+| **CSRF** | Forge requests from other sites | SameSite cookies, state parameter |
+| **Session Hijacking** | Steal session token | Secure cookies, HTTPS only |
+| **OAuth Code Interception** | Steal auth code | PKCE required |
+| **Man-in-the-Middle** | Eavesdrop on traffic | HTTPS enforced, Secure cookies |
+| **Brute Force** | Guess credentials rapidly | Rate limiting (not impl), OAuth (no passwords) |
+
+#### 6.3 Security Recommendations untuk Production
+
+**Yang sudah diimplementasi:**
+
+- ✅ Cookie dengan HttpOnly, Secure, SameSite attributes
+- ✅ OAuth2 dengan PKCE
+- ✅ Session signed cryptographically
+- ✅ HTTPS enforced untuk database connection
+- ✅ Ownership-based authorization
+
+**Yang perlu ditambahkan untuk production:**
+
+```typescript
+// 1. Rate Limiting
+const rateLimit = {
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // limit each IP to 5 requests per window
+};
+
+// 2. Security Headers (via next.config.js)
+headers: [
+  {
+    source: '/(.*)',
+    headers: [
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+    ],
+  },
+];
+
+// 3. Audit Logging
+await auditLog.insert({
+  action: 'AUTH_LOGIN',
+  userId: user.id,
+  ip: request.headers.get('x-forwarded-for'),
+  timestamp: new Date(),
+});
+```
+
+---
+
+### 7. Schema Database
+
+#### 7.1 Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    USER {
+        string id PK "UUID, primary key"
+        string name "Display name"
+        string email UK "Unique, indexed"
+        boolean emailVerified "Google OAuth verified"
+        string image "Profile picture URL"
+        timestamp createdAt "Account creation"
+        timestamp updatedAt "Last update"
+    }
+
+    SESSION {
+        string id PK "UUID"
+        string token UK "Unique session token"
+        timestamp expiresAt "Session expiration"
+        timestamp createdAt "Creation time"
+        timestamp updatedAt "Last activity"
+        string ipAddress "Client IP"
+        string userAgent "Browser info"
+        string userId FK "References user.id"
+    }
+
+    ACCOUNT {
+        string id PK "UUID"
+        string accountId "OAuth provider user ID"
+        string providerId "e.g., 'google'"
+        string userId FK "References user.id"
+        string accessToken "OAuth access token (encrypted)"
+        string refreshToken "OAuth refresh token (encrypted)"
+        string idToken "OAuth ID token"
+        timestamp accessTokenExpiresAt "Token expiration"
+        timestamp refreshTokenExpiresAt "Refresh expiration"
+        string scope "Granted permissions"
+        string password "NULL for OAuth (reserved)"
+        timestamp createdAt "Link time"
+        timestamp updatedAt "Last update"
+    }
+
+    VERIFICATION {
+        string id PK "UUID"
+        string identifier "Email or phone"
+        string value "Verification token"
+        timestamp expiresAt "Token expiration"
+        timestamp createdAt "Request time"
+        timestamp updatedAt "Last update"
+    }
+
+    USER ||--o{ SESSION : "has many"
+    USER ||--o{ ACCOUNT : "has many"
+    USER ||--o{ VERIFICATION : "has many"
+```
+
+#### 7.2 Schema Reference
+
+File: `packages/db/src/schema/auth.ts`
+
+| Tabel | Primary Key | Unique Keys | Indexes | Foreign Keys |
+|-------|------------|-------------|---------|--------------|
+| `user` | `id` | `email` | - | - |
+| `session` | `id` | `token` | `session_userId_idx` | `userId → user.id` |
+| `account` | `id` | - | `account_userId_idx` | `userId → user.id` |
+| `verification` | `id` | - | `verification_identifier_idx` | - |
+
+#### 7.3 Security Considerations Schema
+
+| Field | Security Note |
+|-------|--------------|
+| `session.token` | Tidak berisi data sensitif, hanya reference |
+| `account.accessToken` | Di-encrypt oleh Better-Auth sebelum storage |
+| `account.refreshToken` | Di-encrypt oleh Better-Auth sebelum storage |
+| `account.password` | NULL untuk OAuth accounts (reserved untuk future use) |
+| `verification.value` | Token random, expirable |
+
+---
+
+### 8. Integrasi tRPC
+
+#### 8.1 Context Creation Flow
+
+```mermaid
+flowchart TB
+    A[Incoming Request] --> B[Next.js App Router]
+    B --> C[createContext]
+    C --> D[Extract headers<br/>cookie, authorization]
+    D --> E[auth.api.getSession]
+    E --> F{Session Valid?}
+    F -->|Yes| G[Return ctx with session]
+    F -->|No| H[Return ctx with session=null]
+    G --> I[tRPC Procedures]
+    H --> I
+```
+
+**Implementasi (`packages/api/src/context.ts`):**
+
+```typescript
+export async function createContext(req: NextRequest) {
+  // Extract session from request headers (cookies)
+  const session = await auth.api.getSession({
+    headers: req.headers,
+  });
+
+  return {
+    auth: null,
+    session, // Contains { user, session } if valid, null if not
+  };
+}
+```
+
+#### 8.2 Procedure Types
+
+```mermaid
+flowchart LR
+    subgraph Procedures
+        P1[publicProcedure]
+        P2[protectedProcedure]
+    end
+    
+    subgraph Access
+        A1[Anyone can access<br/>No auth required]
+        A2[Must be logged in<br/>Session required]
+    end
+    
+    P1 --> A1
+    P2 --> A2
+```
+
+| Procedure | Context | Use Case |
+|-----------|---------|----------|
+| `publicProcedure` | `ctx.session = null` | Public data, health checks |
+| `protectedProcedure` | `ctx.session = { user, session }` | User-specific operations |
+
+#### 8.3 Error Handling
+
+```mermaid
+flowchart TD
+    A[API Request] --> B{Session exists?}
+    B -->|No| E[Throw TRPCError<br/>code: UNAUTHORIZED<br/>message: "Authentication required"]
+    B -->|Yes| C{User authorized<br/>for resource?}
+    C -->|No| F[Throw TRPCError<br/>code: FORBIDDEN<br/>message: "Not authorized"]
+    C -->|Yes| D[Execute mutation/query]
+    D --> G[Return result]
+    E --> H[Return 401 to client]
+    F --> I[Return 403 to client]
+    
+    style E fill:#ff6b6b,color:#fff
+    style F fill:#ffa94d,color:#fff
+    style G fill:#51cf66,color:#fff
+```
+
+**Contoh Error Response:**
+
+```json
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Authentication required",
+    "cause": "No valid session"
+  }
+}
+```
+
+---
+
+### Referensi & Resources
+
+- [RFC 6749 - OAuth 2.0 Authorization Framework](https://datatracker.ietf.org/doc/html/rfc6749)
+- [RFC 7519 - JSON Web Token (JWT)](https://datatracker.ietf.org/doc/html/rfc7519)
+- [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- [OWASP OAuth2 Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html)
+- [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+- [Google OAuth2 Best Practices](https://developers.google.com/identity/protocols/oauth2/resources/best-practices)
+- [Better-Auth Documentation](https://www.better-auth.com/)[^1]
 
 ## Konfigurasi Environment
 
