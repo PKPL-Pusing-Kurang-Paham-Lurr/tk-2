@@ -15,9 +15,9 @@ import {
   Lora,
   Source_Serif_4,
 } from "next/font/google";
-import { db } from "@tk2-pkpl/db";
-import { eq } from "drizzle-orm";
-import { siteSettings } from "@tk2-pkpl/db/schema/site-settings";
+import { headers } from "next/headers";
+import { createCaller } from "@tk2-pkpl/api/server";
+import { createContext } from "@tk2-pkpl/api/context";
 
 import "../index.css";
 import Providers from "@/components/providers";
@@ -113,12 +113,15 @@ export const metadata: Metadata = {
 };
 
 async function getSiteTheme() {
-  const settings = await db.query.siteSettings.findFirst({
-    where: eq(siteSettings.id, "global"),
-  });
+  const hdrs = await headers();
+  const host = hdrs.get("host") ?? "localhost";
+  const protocol = hdrs.get("x-forwarded-proto") ?? "http";
+  const ctx = await createContext(new Request(`${protocol}://${host}`, { headers: hdrs }));
+  const caller = createCaller(ctx);
+  const themeData = await caller.admin.getTheme();
   return {
-    theme: settings?.theme ?? "bold-tech",
-    mode: settings?.mode ?? "light",
+    theme: themeData.theme,
+    mode: themeData.mode,
   };
 }
 
