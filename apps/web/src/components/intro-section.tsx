@@ -14,14 +14,17 @@ const TEAM_MEMBERS = [
   { name: "Cyrillo Praditya Soeharto", npm: "2406495413" },
 ];
 
-async function getThemeUpdatedAt() {
+async function getThemeInfo() {
   const caller = await createServerCaller();
   const result = await caller.admin.getTheme();
-  return result.themeUpdatedAt;
+  return {
+    themeUpdatedAt: result.themeUpdatedAt,
+    themeChangedBy: result.themeChangedBy,
+  };
 }
 
 export default async function IntroSection() {
-  const themeUpdatedAt = await getThemeUpdatedAt();
+  const { themeUpdatedAt, themeChangedBy } = await getThemeInfo();
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
@@ -38,7 +41,7 @@ export default async function IntroSection() {
 
         {themeUpdatedAt && (
           <p className="text-sm text-muted-foreground mt-4">
-            Theme changed {formatRelativeTime(new Date(themeUpdatedAt))}
+            Theme changed by {themeChangedBy} {formatRelativeTime(new Date(themeUpdatedAt))}
           </p>
         )}
       </div>
