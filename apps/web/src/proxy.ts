@@ -9,8 +9,8 @@ interface RateLimitState {
   cleanupCount: number;
 }
 
-const RATE_LIMIT_MAX = 10;
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT_MAX = 100;
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
 const CLEANUP_THRESHOLD = 1000;
 
 const rateLimitStore: Map<string, RateLimitEntry> = new Map();

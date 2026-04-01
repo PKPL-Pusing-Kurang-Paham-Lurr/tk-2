@@ -126,21 +126,21 @@ sequenceDiagram
     participant A as Better-Auth
     participant DB as PostgreSQL
 
-    rect rgb(240, 248, 255)
+    rect rgb(70, 100, 150)
         Note over U,B: Phase 1: Initiation
         U->>B: Klik Login dengan Google
         B->>N: Akses /login
         N-->>B: Tampilkan login page
     end
 
-    rect rgb(255, 250, 240)
+    rect rgb(180, 150, 120)
         Note over G,N: Phase 2: OAuth Redirect
         B->>G: Redirect ke Google OAuth client_id, redirect_uri, scope, state, code_challenge
         Note over G: User login & consent
         G-->>B: Authorization Code + state
     end
 
-    rect rgb(240, 255, 240)
+    rect rgb(80, 140, 100)
         Note over A,DB: Phase 3: Token Exchange & Session Creation
         B->>N: Callback /api/auth/callback/google
         N->>A: Verifikasi code + code_verifier
@@ -150,7 +150,7 @@ sequenceDiagram
         A->>DB: Create session record
     end
 
-    rect rgb(255, 240, 245)
+    rect rgb(180, 100, 130)
         Note over A,B: Phase 4: Session Established
         A-->>B: Set-Cookie: session_token (httpOnly, Secure, SameSite)
         B->>N: Request ke /dashboard Cookie: session_token
@@ -188,30 +188,30 @@ sequenceDiagram
     participant N as Next.js App
     participant G as Google OAuth Server
 
-    rect rgb(230, 245, 255)
+    rect rgb(70, 100, 150)
         Note over B,N: Step 1-2: Generate PKCE Code Verifier & Challenge
         N->>N: Generate random code_verifier 43-128 characters
         N->>N: SHA256 hash of code_verifier
         N->>N: Base64URL encode to get code_challenge
     end
 
-    rect rgb(255, 245, 230)
+    rect rgb(180, 150, 120)
         Note over B,G: Step 3: Authorization Request
         B->>G: GET /authorize? client_id response_type=code redirect_uri scope=openid profile email state={csrf_token} code_challenge={challenge} code_challenge_method=S256
     end
 
-    rect rgb(245, 255, 230)
+    rect rgb(100, 140, 80)
         Note over G,B: Step 4-5: User Authentication
         G->>G: Display consent screen App wants access to: Email Profile
         U->>G: User clicks Allow
     end
 
-    rect rgb(255, 230, 245)
+    rect rgb(160, 80, 140)
         Note over G,N: Step 6: Authorization Code Issued
         G-->>B: 302 Redirect to redirect_uri? code={auth_code}&state={csrf_token}
     end
 
-    rect rgb(245, 230, 255)
+    rect rgb(100, 80, 160)
         Note over B,N: Step 7-8: Exchange Code for Tokens
         B->>N: POST /token grant_type=authorization_code code={auth_code} code_verifier={original_verifier} client_id redirect_uri
         N->>G: Verify code_verifier matches
@@ -451,7 +451,7 @@ sequenceDiagram
 
 #### 4.1 Model Otorisasi
 
-Proyek ini mengimplementasikan **resource-based authorization** dengan **ownership model**:
+Proyek ini mengimplementasikan **resource-based authorization** dengan **ownership model** dan **role-based access control (RBAC)**:
 
 ```mermaid
 flowchart TB
@@ -461,7 +461,9 @@ flowchart TB
     subgraph Ownership Check
         R[Resource Request] --> C{creatorId === session.user.id?}
         C -->|Yes| AL[Allow Access]
-        C -->|No| D[DENY Access throw UNAUTHORIZED]
+        C -->|No| D{Is Admin?}
+        D -->|Yes| AL
+        D -->|No| DENY[DENY Access - 403 FORBIDDEN]
     end
     
     U --> C
@@ -476,6 +478,7 @@ flowchart TB
 |-----------|--------------|----------|
 | `publicProcedure` | ❌ Tidak | Health check, public data |
 | `protectedProcedure` | ✅ Ya | User-specific operations |
+| `adminProcedure` | ✅ Ya + Role Admin | Admin operations |
 
 **Implementasi middleware (`packages/api/src/index.ts`):**
 
@@ -499,9 +502,39 @@ export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
     },
   });
 });
+
+// adminProcedure - wajib session + role admin
+export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
+  const user = ctx.session.user as { role?: string };
+  if (user.role !== "admin") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Admin access required",
+    });
+  }
+  return next({ ctx });
+});
 ```
 
-#### 4.3 Authorization Decision Tree
+#### 4.3 User Roles
+
+Sistem menggunakan enum role dengan dua nilai:
+
+| Role | Deskripsi | Akses |
+|------|-----------|-------|
+| `user` | User biasa | Membuat, mengedit, menghapus card miliknya sendiri |
+| `admin` | Administrator | Mengelola theme website, melihat semua user, mengubah role user |
+
+**Schema role di database (`packages/db/src/schema/auth.ts`):**
+
+```typescript
+export const roleEnum = pgEnum("role", ["user", "admin"]);
+
+// Dalam user table:
+role: roleEnum("role").default("user").notNull(),
+```
+
+#### 4.4 Authorization Decision Tree
 
 ```mermaid
 flowchart TD
@@ -511,21 +544,26 @@ flowchart TD
     C -->|No| E
     C -->|Yes| D{Resource Requested?}
     
-    D -->|No Resource| F[Allow Non-resource operation]
-    D -->|Yes| G{Is Owner?}
+    D -->|No Resource| F{Is Admin Procedure?}
+    F -->|Yes| G{Has Admin Role?}
+    F -->|No| K[Allow Non-resource operation]
+    G -->|Yes| H[Allow Admin operation]
+    G -->|No| J[Return 403 FORBIDDEN]
     
-    G -->|Yes| H[Allow Perform operation]
-    G -->|No| I{Is Admin?}
-    I -->|Yes| H
-    I -->|No| J[Return 403 FORBIDDEN]
+    D -->|Yes Resource| L{Is Owner?}
+    L -->|Yes| M[Allow CRUD operation]
+    L -->|No| N{Is Admin?}
+    N -->|Yes| M
+    N -->|No| J
     
     style E fill:#ff6b6b,color:#fff
     style J fill:#ffa94d,color:#fff
-    style F fill:#51cf66,color:#fff
+    style K fill:#51cf66,color:#fff
     style H fill:#51cf66,color:#fff
+    style M fill:#51cf66,color:#fff
 ```
 
-#### 4.4 Contoh: Card Ownership Authorization
+#### 4.5 Contoh: Card Ownership Authorization
 
 Berikut contoh authorization di `packages/api/src/routers/card.ts`:
 
@@ -577,15 +615,139 @@ delete: protectedProcedure
   }),
 ```
 
-#### 4.5 Pattern Otorisasi yang Digunakan
+#### 4.6 Pattern Otorisasi yang Digunakan
 
 | Pattern | Deskripsi | Contoh |
 |---------|-----------|--------|
 | **Ownership Check** | Pemilik resource boleh modify | `if (resource.creatorId !== user.id)` |
-| **Role Check** | Role tertentu boleh akses | `if (user.role !== 'admin')` (not implemented) |
-| **Scope Check** | Scope token tertentu | `if (!hasScope('admin:write'))` (not implemented) |
+| **Role Check** | Role tertentu boleh akses | `if (user.role !== 'admin')` |
 
-**Catatan:** Proyek ini hanya menggunakan **ownership check**. Untuk aplikasi yang lebih kompleks, pertimbangkan RBAC (Role-Based Access Control).
+---
+
+### 4.7 Admin Theme Management
+
+#### 4.7.1 Arsitektur Theme Management
+
+Admin memiliki kemampuan khusus untuk mengelola tema website secara global. Theme yang dipilih berlaku untuk semua user.
+
+```mermaid
+flowchart LR
+    A[Admin User] -->|1. Pilih Theme| B[Theme Settings Panel]
+    B -->|2. setTheme mutation| C[tRPC Admin Router]
+    C -->|3. Update DB| D[(PostgreSQL)]
+    D -->|4. Theme Updated| E[Semua User]
+    
+    subgraph Theme Info
+        F[themeChangedBy: Admin Name]
+        G[themeUpdatedAt: Timestamp]
+    end
+    
+    B --> F
+    C --> G
+```
+
+#### 4.7.2 Tema yang Tersedia
+
+Proyek menyediakan 5 tema preset dari [tweakcn.com](https://tweakcn.com):
+
+| Tema | Deskripsi | Font Sans | Font Serif | Font Mono |
+|------|-----------|-----------|------------|-----------|
+| **bold-tech** | Tema modern dengan aksen ungu | Roboto | Playfair Display | Fira Code |
+| **amber-minimal** | Tema minimal dengan nuansa amber | Inter | Source Serif 4 | JetBrains Mono |
+| **bubblegum** | Tema playful dengan warna-warni | Poppins | Lora | Fira Code |
+| **darkmatter** | Tema monokromatik gelap | Geist Mono | serif | JetBrains Mono |
+| **notebook** | Tema klasik seperti buku catatan | Architects Daughter | Merriweather | Courier Prime |
+
+#### 4.7.3 Theme Schema
+
+Theme disimpan di tabel `site_settings` (`packages/db/src/schema/site-settings.ts`):
+
+```typescript
+export const siteSettings = pgTable("site_settings", {
+  id: text("id").primaryKey().default("global"),
+  theme: text("theme").default("bold-tech").notNull(),
+  mode: text("mode").default("light").notNull(),
+  themeUpdatedAt: timestamp("theme_updated_at").defaultNow().notNull(),
+  themeChangedBy: text("theme_changed_by").default("System"),
+});
+```
+
+#### 4.7.4 Admin Router API
+
+File: `packages/api/src/routers/admin.ts`
+
+**Endpoints tema:**
+
+| Endpoint | Procedure | Deskripsi |
+|----------|-----------|-----------|
+| `getTheme` | `publicProcedure` | Ambil tema aktif (public) |
+| `setTheme` | `adminProcedure` | Ubah tema website (admin only) |
+
+**getTheme Response:**
+
+```typescript
+{
+  theme: "bold-tech" | "amber-minimal" | "bubblegum" | "darkmatter" | "notebook",
+  mode: "light" | "dark",
+  themeUpdatedAt: Date,
+  themeChangedBy: string // Nama admin yang mengubah
+}
+```
+
+**setTheme Mutation:**
+
+```typescript
+// Input
+{
+  theme: "bold-tech" | "amber-minimal" | "bubblegum" | "darkmatter" | "notebook",
+  mode: "light" | "dark"
+}
+
+// Effect
+// - Update theme di database
+// - Set themeChangedBy = nama admin
+// - Set themeUpdatedAt = waktu sekarang
+```
+
+#### 4.7.5 Alur Theme Switching
+
+```mermaid
+sequenceDiagram
+    participant A as Admin
+    participant B as Theme Settings UI
+    participant C as tRPC API
+    participant D as PostgreSQL
+    participant E as Regular User
+
+    A->>B: Pilih tema baru
+    B->>C: setTheme({ theme: "bubblegum", mode: "dark" })
+    C->>C: Verify admin role
+    C->>D: UPDATE site_settings SET theme="bubblegum", mode="dark"
+    D-->>C: Success
+    C-->>B: { success: true, themeChangedBy: "Admin Name" }
+    B->>B: Update UI & Query Cache
+    Note over E: Theme berubah instantly<br/>tanpa refresh
+```
+
+#### 4.7.6 Menambah Admin
+
+Untuk menjadikan user sebagai admin, bisa dilakukan melalui API:
+
+```typescript
+// Di admin router (packages/api/src/routers/admin.ts)
+setUserRole: adminProcedure
+  .input(z.object({
+    userId: z.string(),
+    role: z.enum(["user", "admin"]),
+  }))
+  .mutation(async ({ input }) => {
+    await db
+      .update(user)
+      .set({ role: input.role })
+      .where(eq(user.id, input.userId));
+    return { success: true };
+  }),
+```
 
 ---
 
@@ -669,7 +831,7 @@ Implementasi rate limiting menggunakan sliding window algorithm dengan in-memory
 
 | Endpoint | Batas | Waktu Window |
 |----------|-------|--------------|
-| `/api/auth/*` | 10 attempts | 15 minutes |
+| `/api/auth/*` | 100 attempts | 5 minutes |
 
 **Implementasi:**
 

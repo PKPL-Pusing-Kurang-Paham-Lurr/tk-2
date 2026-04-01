@@ -25,12 +25,14 @@ import {
 import Footer from "@/components/footer";
 import { CardForm } from "@/components/card-form";
 import { CardItem } from "@/components/card-item";
+import { ThemeSettings } from "@/components/theme-settings";
 import { trpc } from "@/utils/trpc";
 
 interface SessionUser {
   id: string;
   name: string | null;
   email: string;
+  role?: string;
 }
 
 interface DashboardProps {
@@ -126,9 +128,12 @@ export default function Dashboard({ session }: DashboardProps) {
           </div>
 
           <Tabs defaultValue="my" className="w-full">
-            <TabsList className="mb-6 grid w-full grid-cols-2 max-w-md">
+            <TabsList className={`mb-6 grid w-full ${session.user.role === "admin" ? "grid-cols-3" : "grid-cols-2"} max-w-md`}>
               <TabsTrigger value="my">My Cards</TabsTrigger>
               <TabsTrigger value="public">Public Cards</TabsTrigger>
+              {session.user.role === "admin" && (
+                <TabsTrigger value="admin">Admin</TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="my">
@@ -178,6 +183,12 @@ export default function Dashboard({ session }: DashboardProps) {
                 </div>
               )}
             </TabsContent>
+
+            {session.user.role === "admin" && (
+              <TabsContent value="admin">
+                <ThemeSettings />
+              </TabsContent>
+            )}
           </Tabs>
 
           <CardForm

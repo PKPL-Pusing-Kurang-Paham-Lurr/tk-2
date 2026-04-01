@@ -18,8 +18,8 @@ interface CardItemProps {
     creator?: { name: string | null; email: string };
   };
   isOwner: boolean;
-  onEdit: (card: CardItemProps["card"]) => void;
-  onDelete: (id: number) => void;
+  onEdit?: (card: CardItemProps["card"]) => void;
+  onDelete?: (id: number) => void;
 }
 
 export function CardItem({ card, isOwner, onEdit, onDelete }: CardItemProps) {
@@ -58,7 +58,7 @@ export function CardItem({ card, isOwner, onEdit, onDelete }: CardItemProps) {
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => onEdit(card)}
+              onClick={() => onEdit?.(card)}
               className="h-7 w-7"
             >
               <Pencil className="h-4 w-4" />
@@ -66,7 +66,7 @@ export function CardItem({ card, isOwner, onEdit, onDelete }: CardItemProps) {
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => onDelete(card.id)}
+              onClick={() => onDelete?.(card.id)}
               className="h-7 w-7 text-destructive hover:text-destructive"
             >
               <Trash2 className="h-4 w-4" />

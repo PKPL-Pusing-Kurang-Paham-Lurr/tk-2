@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { MenuIcon, XIcon } from "lucide-react";
 
 import { Button } from "@tk2-pkpl/ui/components/button";
@@ -16,11 +17,16 @@ import {
 import { Skeleton } from "@tk2-pkpl/ui/components/skeleton";
 
 import { authClient } from "@/lib/auth-client";
+import { trpc } from "@/utils/trpc";
 
 export default function Navbar() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: session, isPending } = authClient.useSession();
+  const { data: currentUser } = useQuery({
+    ...trpc.admin.me.queryOptions(),
+    enabled: !!session?.user.id,
+  });
 
   const handleSignOut = () => {
     authClient.signOut({
@@ -71,6 +77,9 @@ export default function Navbar() {
                 <div className="flex flex-col gap-1 px-2 py-1.5">
                   <span className="text-xs font-medium truncate">{session.user.name}</span>
                   <span className="text-xs text-muted-foreground truncate">{session.user.email}</span>
+                  {currentUser?.role === "admin" && (
+                    <span className="text-xs font-medium text-primary">admin</span>
+                  )}
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={handleSignOut}>

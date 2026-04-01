@@ -8,7 +8,16 @@ import {
   Lobster,
   Pacifico,
   Source_Code_Pro,
+  Fira_Code,
+  JetBrains_Mono,
+  Inter,
+  Poppins,
+  Lora,
+  Source_Serif_4,
 } from "next/font/google";
+import { db } from "@tk2-pkpl/db";
+import { eq } from "drizzle-orm";
+import { siteSettings } from "@tk2-pkpl/db/schema/site-settings";
 
 import "../index.css";
 import Providers from "@/components/providers";
@@ -62,19 +71,67 @@ const fontSourceCodePro = Source_Code_Pro({
   variable: "--font-source-code-pro",
 });
 
+const fontFiraCode = Fira_Code({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-fira-code",
+});
+
+const fontJetBrainsMono = JetBrains_Mono({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+});
+
+const fontInter = Inter({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
+const fontPoppins = Poppins({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-poppins",
+});
+
+const fontLora = Lora({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-lora",
+});
+
+const fontSourceSerif4 = Source_Serif_4({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-source-serif-4",
+});
+
 export const metadata: Metadata = {
   title: "tk2-pkpl",
   description: "tk2-pkpl",
 };
 
-export default function RootLayout({
+async function getSiteTheme() {
+  const settings = await db.query.siteSettings.findFirst({
+    where: eq(siteSettings.id, "global"),
+  });
+  return {
+    theme: settings?.theme ?? "bold-tech",
+    mode: settings?.mode ?? "light",
+  };
+}
+
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const { theme, mode } = await getSiteTheme();
+
   return (
-    <html lang="en" data-theme="light">
-      <body className={`${fontArchitectsDaughter.variable} ${fontMerriweather.variable} ${fontCourierPrime.variable} ${fontRoboto.variable} ${fontPlayfairDisplay.variable} ${fontLobster.variable} ${fontPacifico.variable} ${fontSourceCodePro.variable} antialiased`}>
+    <html lang="en" data-theme={theme} data-mode={mode} className={mode}>
+      <body className={`${fontArchitectsDaughter.variable} ${fontMerriweather.variable} ${fontCourierPrime.variable} ${fontRoboto.variable} ${fontPlayfairDisplay.variable} ${fontLobster.variable} ${fontPacifico.variable} ${fontSourceCodePro.variable} ${fontFiraCode.variable} ${fontJetBrainsMono.variable} ${fontInter.variable} ${fontPoppins.variable} ${fontLora.variable} ${fontSourceSerif4.variable} antialiased`}>
         <Providers>
           <Navbar />
           {children}

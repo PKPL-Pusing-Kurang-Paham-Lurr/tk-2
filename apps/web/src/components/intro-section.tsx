@@ -1,3 +1,5 @@
+import { createServerCaller } from "@/utils/server-caller";
+import { formatRelativeTime } from "@tk2-pkpl/ui/lib/time-utils";
 import {
   Card,
   CardContent,
@@ -12,7 +14,15 @@ const TEAM_MEMBERS = [
   { name: "Cyrillo Praditya Soeharto", npm: "2406495413" },
 ];
 
-export default function IntroSection() {
+async function getThemeUpdatedAt() {
+  const caller = await createServerCaller();
+  const result = await caller.admin.getTheme();
+  return result.themeUpdatedAt;
+}
+
+export default async function IntroSection() {
+  const themeUpdatedAt = await getThemeUpdatedAt();
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-4 py-12">
       <div className="mb-8 text-center">
@@ -25,6 +35,12 @@ export default function IntroSection() {
         <p className="text-xl text-muted-foreground">
           by PKPL: Pusing Kurang Paham Lur
         </p>
+
+        {themeUpdatedAt && (
+          <p className="text-sm text-muted-foreground mt-4">
+            Theme changed {formatRelativeTime(new Date(themeUpdatedAt))}
+          </p>
+        )}
       </div>
 
       <Card className="w-full max-w-md shadow-lg">
