@@ -28,34 +28,6 @@ export const adminRouter = router({
     };
   }),
 
-  listUsers: adminProcedure.query(async () => {
-    return await db.query.user.findMany();
-  }),
-
-  getUser: adminProcedure
-    .input(z.object({ id: z.string() }))
-    .query(async ({ input }) => {
-      const result = await db.query.user.findFirst({
-        where: eq(user.id, input.id),
-      });
-      return result ?? null;
-    }),
-
-  setUserRole: adminProcedure
-    .input(
-      z.object({
-        userId: z.string(),
-        role: z.enum(["user", "admin"]),
-      }),
-    )
-    .mutation(async ({ input }) => {
-      await db
-        .update(user)
-        .set({ role: input.role })
-        .where(eq(user.id, input.userId));
-      return { success: true };
-    }),
-
   getTheme: publicProcedure.query(async (): Promise<ThemeData> => {
     const result = await db.query.siteSettings.findFirst({
       where: eq(siteSettings.id, "global"),

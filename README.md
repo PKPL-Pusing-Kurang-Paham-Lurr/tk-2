@@ -516,23 +516,113 @@ export const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
 });
 ```
 
-#### 4.3 User Roles
+#### 4.3 Peran (Role) User
 
-Sistem menggunakan enum role dengan dua nilai:
+Sistem otentikasi proyek ini menggunakan model **Role-Based Access Control (RBAC)** dengan dua peran utama:
 
-| Role | Deskripsi | Akses |
-|------|-----------|-------|
-| `user` | User biasa | Membuat, mengedit, menghapus card miliknya sendiri |
-| `admin` | Administrator | Mengelola theme website, melihat semua user, mengubah role user |
+##### 4.3.1 Daftar Peran
 
-**Schema role di database (`packages/db/src/schema/auth.ts`):**
+| Peran | Deskripsi | Hak Akses |
+|-------|-----------|-----------|
+| `user` | User biasa | Membuat, mengedit, dan menghapus card yang dimiliki sendiri |
+| `admin` | Administrator | Mengelola tema website secara global |
+
+##### 4.3.2 Hak Akses Admin
+
+Peran `admin` memiliki hak khusus yang tidak dimiliki user biasa:
+
+| Fitur | User Biasa | Admin |
+|-------|------------|-------|
+| Membuat card | ✅ | ✅ |
+| Mengedit card sendiri | ✅ | ✅ |
+| Menghapus card sendiri | ✅ | ✅ |
+| Lihat siapa yang mengubah tema terakhir | ✅ | ✅ |
+| Mengelola tema website | ❌ | ✅ |
+| Mengubah mode tema (light/dark) | ❌ | ✅ |
+
+##### 4.3.3 Implementasi Role di Database
+
+Role disimpan dalam kolom `role` pada tabel `user` (`packages/db/src/schema/auth.ts`):
 
 ```typescript
 export const roleEnum = pgEnum("role", ["user", "admin"]);
 
-// Dalam user table:
+// Dalam tabel user:
 role: roleEnum("role").default("user").notNull(),
 ```
+
+##### 4.3.4 Cara Menambahkan Admin
+
+Untuk menjadikan seorang user menjadi admin, dapat dilakukan dengan cara berikut:
+
+**Melalui Database (Langsung):**
+
+```sql
+UPDATE user SET role = 'admin' WHERE id = 'user_id_tujuan';
+```
+
+**Melalui Query Drizzle:**
+
+```typescript
+import { db } from "@tk2-pkpl/db";
+import { user } from "@tk2-pkpl/db/schema/auth";
+import { eq } from "drizzle-orm";
+
+await db
+  .update(user)
+  .set({ role: "admin" })
+  .where(eq(user.id, "user_id_tujuan"));
+```
+
+##### 4.3.5 Keamanan Role-Based Access
+
+Keamanan sistem RBAC dijamin melalui:
+
+1. **Middleware Validation**: Setiap request ke endpoint admin divalidasi oleh `adminProcedure`
+2. **Database-level Enforcement**: Role disimpan di database, bukan di cookie/session
+3. **Fail-safe Default**: Jika role tidak ditemukan, defaultnya adalah `user`
+
+```mermaid
+flowchart TD
+    A[Request ke Endpoint Admin] --> B{Cek Session Valid?}
+    B -->|Tidak| E[401 UNAUTHORIZED]
+    B -->|Ya| C{Cek Role Admin?}
+    C -->|Tidak| F[403 FORBIDDEN]
+    C -->|Ya| G[Izinkan Akses]
+    
+    style E fill:#ff6b6b,color:#fff
+    style F fill:#ffa94d,color:#fff
+    style G fill:#51cf66,color:#fff
+```
+
+##### 4.3.6 Alur Verifikasi Admin
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as API Server
+    participant D as Database
+    
+    C->>A: Request dengan Session Cookie
+    A->>A: Validasi Session
+    A->>D: Cek role user di database
+    D-->>A: { role: "admin" }
+    A->>A: Verifikasi role === "admin"
+    alt Role Bukan Admin
+        A-->>C: 403 Forbidden
+    else Role Admin
+        A-->>C: 200 OK + Data
+    end
+```
+
+##### 4.3.7 Best Practices Keamanan Role
+
+| Praktik | Penjelasan |
+|---------|------------|
+| **Principle of Least Privilege** | User hanya mendapat akses yang diperlukan |
+| **Fail-safe Defaults** | Jika terjadi error, default role adalah `user` |
+| **Database Validation** | Role tidak disimpan di client, selalu diverifikasi di server |
+| **Audit Trail** | Perubahan tema mencatat `themeChangedBy` dan `themeUpdatedAt` |
 
 #### 4.4 Authorization Decision Tree
 
@@ -729,25 +819,7 @@ sequenceDiagram
     Note over E: Theme berubah instantly<br/>tanpa refresh
 ```
 
-#### 4.7.6 Menambah Admin
 
-Untuk menjadikan user sebagai admin, bisa dilakukan melalui API:
-
-```typescript
-// Di admin router (packages/api/src/routers/admin.ts)
-setUserRole: adminProcedure
-  .input(z.object({
-    userId: z.string(),
-    role: z.enum(["user", "admin"]),
-  }))
-  .mutation(async ({ input }) => {
-    await db
-      .update(user)
-      .set({ role: input.role })
-      .where(eq(user.id, input.userId));
-    return { success: true };
-  }),
-```
 
 ---
 
