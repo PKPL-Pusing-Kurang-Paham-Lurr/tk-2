@@ -24,8 +24,8 @@ export default async function PublicCardsSection() {
             See what others are creating
           </h2>
           <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-            Join thousands of students expressing themselves with custom fonts, colors, and designs.
-            Create your own card in seconds.
+            Express yourself with custom fonts, colors, and designs.  
+            Create your card in seconds.
           </p>
         </div>
 
