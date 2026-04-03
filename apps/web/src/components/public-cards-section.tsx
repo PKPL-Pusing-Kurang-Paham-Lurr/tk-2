@@ -21,7 +21,7 @@ export default async function PublicCardsSection() {
       <div className="container mx-auto max-w-6xl px-4 md:px-6 lg:px-8">
         <div className="mb-12 text-center">
           <h2 className="mb-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            See what others are creating
+            See what others have created.
           </h2>
           <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
             Join thousands of students expressing themselves with custom fonts, colors, and designs.
